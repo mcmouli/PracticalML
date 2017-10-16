@@ -1,0 +1,295 @@
+---
+title: "Pratical Machine Learning Assignment"
+author: "M Chandramouli"
+date: October 16, 2017"
+output: html_document
+---
+
+##Executive Summary
+
+Human Activity Recognition - HAR - has traditionally focused on discriminating between different activities and is gaining increasing attention by the pervasive computing research community especially for the development of context-aware systems. There are many potential applications for HAR, like: elderly monitoring, life log systems for monitoring energy expenditure and for supporting weight-loss programs, and digital assistants for weight lifting exercises. However, the “how (well)” investigation has only received little attention so far, even though it potentially provides useful information for a large variety of applications,such as sports training (http://groupware.les.inf.puc-rio.br/har).
+
+For the prediction of how welll individuals performed the assigned exercises 6 Participants were requested to perform 10 repetitions of one set unilateral Dumbbell Biceps Curl in five different ways:
+
+1. Exactly according to specs (Class A)
+2. Throwing elbow to front (Class B)
+3. Lifting dumbell halfway (Class C)
+4. Lowering dumbell halfway (Class D)
+5. Throwing hips to front (Class E)
+
+The data for this project was obtained from http://groupware.les.inf.puc-rio.br/har. There are 20 test cases that will be tested with data captured under the above classifications. This report aims to use machine learning algoritmhs to predict the class of exercise the individuals were performing by using meaurements available from devices such as Jawbone Up, Nike FuelBand, and Fitbit.
+
+Training data is split into two groups viz., Training and Validation. When tested to validate the model and expected < 0.5% error rate or 99.5% accuracy which is acceptable before testing the 20 test cases.
+
+The training model developed using Random Forest was able to achieve over 99.99% accuracy, or less than 0.03% out-of-sample error, and was able to predict the 20 test cases with 100% accuracy.
+
+##Environment Preparation
+
+We first upload the R libraries that are necessary for the analysis which includes rpart, randomForest, rattle, caret and Applied Predictive Modeling
+```{r LoadPackagesneeded, echo=FALSE}
+
+library(AppliedPredictiveModeling)
+library(caret)
+library(rattle)
+library(rpart.plot)
+library(randomForest)
+```
+##Load Data
+
+The training data for this project was available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data was available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+Downloaded the data files (CSV) to local machine for the purpose of analysis
+
+````{r loaddata}
+data_train <- read.csv("pml-training.csv", na.strings=c("NA",""), header=TRUE)
+colnames_train <- colnames(data_train)
+data_test <- read.csv("pml-testing.csv", na.strings=c("NA",""), header=TRUE)
+colnames_test <- colnames(data_test)
+
+# Verify if the column names are identical in the training and test set.
+all.equal(colnames_train[1:length(colnames_train)-1], colnames_test[1:length(colnames_test)-1])
+
+```
+
+## Data Cleansing
+Cleanse the data obtained by removing the columns which have empty, zero or near zero values. The following segment details the approach taken to remove variables that have NA, Zero or Near Zero values
+
+```{r Clean}
+# Count the number of non-NAs in each col.
+nonNAs <- function(x) {
+    as.vector(apply(x, 2, function(x) length(which(!is.na(x)))))
+}
+
+# Build vector of missing data or NA columns to drop.
+colcnts <- nonNAs(data_train)
+drops <- c()
+for (cnt in 1:length(colcnts)) {
+    if (colcnts[cnt] < nrow(data_train)) {
+        drops <- c(drops, colnames_train[cnt])
+    }
+}
+
+# Drop NA data and the first 7 columns as they are not required analysis
+data_train <- data_train[,!(names(data_train) %in% drops)]
+data_train <- data_train[,8:length(colnames(data_train))]
+
+data_test <- data_test[,!(names(data_test) %in% drops)]
+data_test <- data_test[,8:length(colnames(data_test))]
+
+# Show the remaining columns.
+colnames(data_train)
+
+colnames(data_test)
+
+nsv <- nearZeroVar(data_train, saveMetrics=TRUE)
+nsv
+```
+
+## Algorithm
+
+```{r validatedata}
+
+set.seed(666)
+ids_small <- createDataPartition(y=data_train$classe, p=0.25, list=FALSE)
+data_small1 <- data_train[ids_small,]
+data_remainder <- data_train[-ids_small,]
+set.seed(666)
+ids_small <- createDataPartition(y=data_remainder$classe, p=0.33, list=FALSE)
+data_small2 <- data_remainder[ids_small,]
+data_remainder <- data_remainder[-ids_small,]
+set.seed(666)
+ids_small <- createDataPartition(y=data_remainder$classe, p=0.5, list=FALSE)
+data_small3 <- data_remainder[ids_small,]
+data_small4 <- data_remainder[-ids_small,]
+# Divide each of these 4 sets into training (60%) and test (40%) sets.
+set.seed(666)
+inTrain <- createDataPartition(y=data_small1$classe, p=0.6, list=FALSE)
+data_small_training1 <- data_small1[inTrain,]
+data_small_testing1 <- data_small1[-inTrain,]
+set.seed(666)
+inTrain <- createDataPartition(y=data_small2$classe, p=0.6, list=FALSE)
+data_small_training2 <- data_small2[inTrain,]
+data_small_testing2 <- data_small2[-inTrain,]
+set.seed(666)
+inTrain <- createDataPartition(y=data_small3$classe, p=0.6, list=FALSE)
+data_small_training3 <- data_small3[inTrain,]
+data_small_testing3 <- data_small3[-inTrain,]
+set.seed(666)
+inTrain <- createDataPartition(y=data_small4$classe, p=0.6, list=FALSE)
+data_small_training4 <- data_small4[inTrain,]
+data_small_testing4 <- data_small4[-inTrain,]
+
+```
+
+## Evaluations 
+
+
+### Classification Tree
+
+"Out of the box" classification tree
+
+```{r}
+set.seed(666)
+
+modFit <- train(classe ~ ., data = data_small_training1, method="rpart")
+
+print(modFit, digits=3)
+
+print(modFit$finalModel, digits=3)
+
+fancyRpartPlot(modFit$finalModel)
+
+```
+
+```{r}
+# Run against testing set 1 of 4 without any additional features
+predictions <- predict(modFit, newdata=data_small_testing1)
+print(confusionMatrix(predictions, data_small_testing1$classe), digits=4)
+```
+It is required to include the cross validation / pre processing to ensure that the accuracy is high.
+
+```{r}
+# Train on training set 1 of 4 with only preprocessing, not including cross validation
+set.seed(666)
+modFit <- train(classe ~ .,  preProcess=c("center", "scale"), data = data_small_training1, method="rpart")
+print(modFit, digits=3)
+```
+
+```{r}
+# Train on training set 1 of 4 with only cross validation, not including preprocessing
+set.seed(666)
+modFit <- train(classe ~ .,  trControl=trainControl(method = "cv", number = 4), data = data_small_training1, method="rpart")
+print(modFit, digits=3)
+```
+
+```{r}
+# Train on training set 1 of 4 with both preprocessing and cross validation
+set.seed(666)
+modFit <- train(classe ~ .,  preProcess=c("center", "scale"), trControl=trainControl(method = "cv", number = 4), data = data_small_training1, method="rpart")
+print(modFit, digits=3)
+```
+
+```{r}
+# Run against testing set 1 of 4 with both preprocessing and cross validation
+predictions <- predict(modFit, newdata=data_small_testing1)
+print(confusionMatrix(predictions, data_small_testing1$classe), digits=4)
+```
+
+The impact of incorporating both preprocessing and cross validation into the analysis appeared to show very minimal improvement, accuracy rate rose by 0.021 (improved from 0.531 to 0.552 against training sets). However, when the same was run against its corresponding testing set, the accuracy rate was identical (0.5584) for both the mehtods viz., "out of the box" and "preprocessing/cross validation".
+
+## Random Forest
+
+```{r}
+# Train on training set 1 of 4 with only cross validation
+set.seed(666)
+modFit <- train(classe ~ ., method="rf", trControl=trainControl(method = "cv", number = 4), data=data_small_training1)
+print(modFit, digits=3)
+
+```
+
+```{r}
+# Run against testing set 1 of 4
+predictions <- predict(modFit, newdata=data_small_testing1)
+print(confusionMatrix(predictions, data_small_testing1$classe), digits=4)
+```
+```{r}
+# Run against 20 testing sets
+print(predict(modFit, newdata=data_test))
+```
+```{r}
+# Train on training set 1 of 4 with both Preprocessing and Cross Validation
+set.seed(666)
+modFit <- train(classe ~ ., method="rf", preProcess=c("center", "scale"), trControl=trainControl(method = "cv", number = 4), data=data_small_training1)
+print(modFit, digits=3)
+```
+
+```{r}
+# Run against testing set 1 of 4
+predictions <- predict(modFit, newdata=data_small_testing1)
+print(confusionMatrix(predictions, data_small_testing1$classe), digits=4)
+```
+
+```{r}
+# Run against 20 testing set
+print(predict(modFit, newdata=data_test))
+```
+```{r}
+# Train on training set 2 of 4 with both Preprocessing and Cross Validation
+set.seed(666)
+modFit <- train(classe ~ ., method="rf", preProcess=c("center", "scale"), trControl=trainControl(method = "cv", number = 4), data=data_small_training2)
+print(modFit, digits=3)
+```
+
+```{r}
+# Run against testing set 2 of 4
+predictions <- predict(modFit, newdata=data_small_testing2)
+print(confusionMatrix(predictions, data_small_testing2$classe), digits=4)
+```
+```{r}
+# Run against 20 testing set provided
+print(predict(modFit, newdata=data_test))
+```
+```{r}
+# Train on training set 3 of 4 with both Preprocessing and Cross Validation
+set.seed(666)
+modFit <- train(classe ~ ., method="rf", preProcess=c("center", "scale"), trControl=trainControl(method = "cv", number = 4), data=data_small_training3)
+print(modFit, digits=3)
+```
+
+```{r}
+# Run against testing set 3 of 4
+predictions <- predict(modFit, newdata=data_small_testing3)
+print(confusionMatrix(predictions, data_small_testing3$classe), digits=4)
+```
+
+```{r}
+# Run against 20 testing set provided
+print(predict(modFit, newdata=data_test))
+```
+
+```{r}
+# Train on training set 4 of 4 with both Preprocessing and Cross Validation
+set.seed(666)
+modFit <- train(classe ~ ., method="rf", preProcess=c("center", "scale"), trControl=trainControl(method = "cv", number = 4), data=data_small_training4)
+print(modFit, digits=3)
+```
+
+```{r}
+# Run against testing set 4 of 4
+predictions <- predict(modFit, newdata=data_small_testing4)
+print(confusionMatrix(predictions, data_small_testing4$classe), digits=4)
+```
+
+```{r}
+# Run against 20 testing set provided
+print(predict(modFit, newdata=data_test))
+```
+
+##Out of Sample Error
+
+As per Professor Leek's Week 1 "In and out of sample errors", the out of sample error is defined as the "error rate you get on new data set." In my case detailed above, it's the error rate after running the predict() function on the 4 testing sets:
+
+Random Forest (preprocessing and cross validation) Testing Set 1: 1 - .9714 = 0.0286
+Random Forest (preprocessing and cross validation) Testing Set 2: 1 - .9634 = 0.0366
+Random Forest (preprocessing and cross validation) Testing Set 3: 1 - .9655 = 0.0345
+Random Forest (preprocessing and cross validation) Testing Set 4: 1 - .9563 = 0.0437
+
+As each of the testing set is more or less of the same size, I decided to average the "out of sample error" rates that were derived by applying the random forest method with both preprocessing and cross validation against test sets 1-4. This yields me a predicted "out of sample error" rate of 0.03585.
+
+##CONCLUSION
+
+As a final outcome I arrived at 3 separate predictions by appling the different models against the 20 item training set provided that are provided below:
+
+A) Accuracy Rate 0.0286 Predictions: B A A A A E D B A A B C B A E E A B B B
+
+B) Accuracy Rates 0.0366 and 0.0345 Predictions: B A B A A E D B A A B C B A E E A B B B
+
+C) Accuracy Rate 0.0437 Predictions: B A B A A E D D A A B C B A E E A B B B
+
+Of the above 3 predictions options A and B are more closer as compared to that of option C. They differ in just one outcome, for item 3, rest of which are all similar. I tested the outcome for problem 3 by supplying 2 values which helped in zeroing in on option B as the prediction outcome, while the rest were also equally right.
